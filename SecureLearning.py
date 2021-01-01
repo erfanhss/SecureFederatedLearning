@@ -51,9 +51,9 @@ test_loss = tf.keras.metrics.Mean(name='test_loss')
 test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
       name='test_accuracy')
 for epoch in range(numEpochs):
+    print(epoch)
     train_loss = tf.keras.metrics.Mean()
     workerGrads = []
-    phi = random_matrix(alpha / 2 / samples, samples, params_count, seed=epoch)
     for worker in range(numWorkers):
         batchIdx = np.random.permutation(len(workerDataSetX[worker]))[0:batchSizePerWorker]
         batchX = workerDataSetX[worker][batchIdx]
@@ -66,14 +66,9 @@ for epoch in range(numEpochs):
             flat_grad.append(tf.reshape(arr, [-1, 1]))
             shapes.append(tf.shape(arr))
         flat_grad = tf.concat(flat_grad, axis=0)
-        error_compensated = lr * flat_grad + error[worker]
-        compressed = tf.sign(tf.sparse.sparse_dense_matmul(phi, error_compensated)) + 2
-        workerGrads.append(np.ndarray.astype(compressed.numpy(), dtype=np.int64))
-        beta = tf.norm(error_compensated, ord=1) / params_count / (1 + alpha) / (1 + alpha * r)
-        recov = beta * tf.sparse.sparse_dense_matmul(tf.sparse.transpose(phi), compressed)
-        error[worker] = error_compensated - recov
-    secureAgggregationResult = SecAgg.secureAggregtion(workerGrads, 13, numWorkers // 2)
-    aggregatedGradients = secureAgggregationResult[0] - 2*numWorkers
+        workerGrads.append(flat_grad.numpy())
+    secureAgggregationResult = SecAgg.secureAggregtion(workerGrads, 12, numWorkers // 2)
+    aggregatedGradients = secureAgggregationResult[0]/numWorkers
     output = []
     cntr = 0
     for shape in shapes:
@@ -84,7 +79,7 @@ for epoch in range(numEpochs):
         output.append(params)
     optimizer.apply_gradients(zip(output, model.trainable_weights))
 
-    if epoch+1 % 60 == 0:
+    if (epoch+1) % 10 == 0:
         testIdx = np.random.permutation(len(xTest))
         testBatchIdx = np.array_split(testIdx, 60)
         for batchIdx in testBatchIdx:
@@ -92,6 +87,6 @@ for epoch in range(numEpochs):
             lossValue = loss_fn(yTest[batchIdx], logits)
             test_accuracy.update_state(yTest[batchIdx], logits)
             test_loss.update_state(lossValue)
-        print('Epoch: ' + (epoch+1)/60)
-        print('Test Loss: ' + test_loss.result().numpy())
-        print('Test Accuracy: ' + test_accuracy.result().numpy())
+        print('Iteration: ', epoch)
+        print('Test Loss: ', test_loss.result().numpy())
+        print('Test Accuracy: ', test_accuracy.result().numpy())
